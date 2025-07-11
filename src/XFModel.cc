@@ -7,14 +7,16 @@ BasicLayerImpl::BasicLayerImpl(int in_channels,
                                int out_channels,
                                int kernel_size,
                                int stride,
-                               int padding) {
+                               int padding,
+                               int dilation,
+                               bool bias) {
   layer = torch::nn::Sequential(
       torch::nn::Conv2d(
           torch::nn::Conv2dOptions(in_channels, out_channels, kernel_size)
               .padding(padding)
               .stride(stride)
-              .dilation(1)
-              .bias(false)),
+              .dilation(dilation)
+              .bias(bias)),
       torch::nn::BatchNorm2d(
           torch::nn::BatchNorm2dOptions(out_channels).affine(false)),
       torch::nn::ReLU(torch::nn::ReLUOptions().inplace(true)));
@@ -26,27 +28,35 @@ torch::Tensor BasicLayerImpl::forward(torch::Tensor x) {
 }
 
 //////////////////////////////// The XFeat Model ///////////////////////////////
-XFeatModel::XFeatModel() {
+XFeatModel::XFeatModel(int stride) {
   norm = torch::nn::InstanceNorm2d(1);
 
-  // CNN Backbone and Heads
+  // CNN Backbone and Heads - Updated to match Python version
 
   skip1 = torch::nn::Sequential(
-      torch::nn::AvgPool2d(torch::nn::AvgPool2dOptions(4).stride(4)),
+      torch::nn::AvgPool2d(torch::nn::AvgPool2dOptions(stride).stride(stride)),
       torch::nn::Conv2d(
           torch::nn::Conv2dOptions(1, 24, 1).stride(1).padding(0)));
 
-  block1 = torch::nn::Sequential(
-      BasicLayer(1, 4, 3, 1, 1), BasicLayer(4, 8, 3, 2, 1),
-      BasicLayer(8, 8, 3, 1, 1), BasicLayer(8, 24, 3, 2, 1));
+  // Block1 configuration based on stride
+  if (stride == 1 || stride == 2) {
+    block1 = torch::nn::Sequential(
+        BasicLayer(1, 4, 3, 1, 1), BasicLayer(4, 8, 3, stride, 1),
+        BasicLayer(8, 8, 3, 1, 1), BasicLayer(8, 24, 3, 1, 1));
+  } else if (stride == 4) {
+    block1 = torch::nn::Sequential(
+        BasicLayer(1, 4, 3, 1, 1), BasicLayer(4, 8, 3, 2, 1),
+        BasicLayer(8, 8, 3, 1, 1), BasicLayer(8, 24, 3, 2, 1));
+  } else {
+    throw std::invalid_argument("Invalid stride value, must be 1, 2 or 4");
+  }
 
   block2 = torch::nn::Sequential(BasicLayer(24, 24, 3, 1, 1),
                                  BasicLayer(24, 24, 3, 1, 1));
 
-  // stride=1 (changed from 2 to 1)
-  block3 = torch::nn::Sequential(BasicLayer(24, 64, 3, 1, 1),
-                                 BasicLayer(64, 64, 3, 1, 1),
-                                 BasicLayer(64, 64, 1, 1, 0));
+  block3 = torch::nn::Sequential(
+      BasicLayer(24, 64, 3, 1, 1),  // stride=1 (was 2 in original)
+      BasicLayer(64, 64, 3, 1, 1), BasicLayer(64, 64, 1, 1, 0));
 
   block4 = torch::nn::Sequential(BasicLayer(64, 64, 3, 2, 1),
                                  BasicLayer(64, 64, 3, 1, 1),

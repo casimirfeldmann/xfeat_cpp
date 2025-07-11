@@ -7,7 +7,10 @@ XFDetector::XFDetector(int _top_k, float _detection_threshold, bool use_cuda)
     : top_k(_top_k), detection_threshold(_detection_threshold) {
   // load the model
   weights = "weights/xfeat.pt";
-  model = std::make_shared<XFeatModel>();
+
+  // Initialize with stride=4 to match Python version
+  model = std::make_shared<XFeatModel>(4);
+
   torch::serialize::InputArchive archive;
   archive.load_from(getWeightsPath(weights));
   model->load(archive);
@@ -163,10 +166,7 @@ torch::Tensor XFDetector::extractDenseFeatures(torch::Tensor& x) {
   std::tie(M1, K1, H1) = out;
   M1 = torch::nn::functional::normalize(
       M1, torch::nn::functional::NormalizeFuncOptions().dim(1));
-
-  // Return M1 in the same format as Python version: [0].permute(1, 2, 0)
-  // Remove batch dimension and permute from (C, H, W) to (H, W, C)
-  return M1[0].permute({1, 2, 0});
+  return M1[0];  // dense feats: torch.Tensor(B, 64, H/8, W/8)
 }
 
 torch::Tensor XFDetector::parseInput(cv::Mat& img) {
@@ -194,7 +194,6 @@ torch::Tensor XFDetector::parseInput(cv::Mat& img) {
 std::tuple<torch::Tensor, double, double> XFDetector::preprocessTensor(
     torch::Tensor& x) {
   // ensure the tensor has the correct type
-  x = x.to(torch::kFloat);
   x = x.to(torch::kHalf);
 
   // calculate new size divisible by 32
@@ -212,7 +211,8 @@ std::tuple<torch::Tensor, double, double> XFDetector::preprocessTensor(
       x, torch::nn::functional::InterpolateFuncOptions()
              .size(size_array)
              .mode(torch::kBilinear)
-             .align_corners(false));
+             .align_corners(
+                 true));  // Changed to align_corners=true to match Python
   return std::make_tuple(x, rh, rw);
 }
 

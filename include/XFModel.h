@@ -12,9 +12,11 @@ struct BasicLayerImpl : torch::nn::Module {
 
   BasicLayerImpl(int in_channels,
                  int out_channels,
-                 int kernel_size,
-                 int stride,
-                 int padding);
+                 int kernel_size = 3,
+                 int stride = 1,
+                 int padding = 1,
+                 int dilation = 1,
+                 bool bias = false);
   torch::Tensor forward(torch::Tensor x);
 };
 
@@ -33,7 +35,7 @@ struct XFeatModel : torch::nn::Module {
       keypoint_head{nullptr};
   torch::nn::Sequential fine_matcher{nullptr};
 
-  XFeatModel();
+  XFeatModel(int stride = 4);  // Default stride of 4 to match Python version
   torch::Tensor unfold2d(torch::Tensor& x, int ws = 2);
   std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> forward(
       torch::Tensor& x);
